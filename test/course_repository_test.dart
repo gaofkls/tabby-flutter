@@ -126,7 +126,7 @@ void main() {
       ),
     ]);
 
-    expect(count, 2); // 两门课
+    expect(count.total, 2); // 两门课
 
     final courses = await db.select(db.courses).get();
     expect(courses.length, 2);
@@ -159,10 +159,92 @@ void main() {
     expect(await liveSessions(courses.single.id), 1);
   });
 
+  test('导入：重复导入同一张课表不会生成重复课程', () async {
+    final entries = [
+      const ImportEntry(
+        name: '数据结构',
+        weekday: 1,
+        startMinute: 480,
+        endMinute: 580,
+        location: '实验楼-A402',
+      ),
+      const ImportEntry(
+        name: '线性代数',
+        weekday: 2,
+        startMinute: 600,
+        endMinute: 700,
+      ),
+    ];
+    final first = await repo.importEntries(entries);
+    expect(first.created, 2);
+    expect(first.updated, 0);
+    expect((await db.select(db.courses).get()).length, 2);
+
+    // 再导入一次完全相同的课表
+    final second = await repo.importEntries(entries);
+    expect(second.created, 0);
+    expect(second.updated, 2);
+    expect((await db.select(db.courses).get()).length, 2);
+    final ds = (await db.select(db.courses).get())
+        .firstWhere((c) => c.name == '数据结构');
+    expect(await liveSessions(ds.id), 1);
+  });
+
+  test('导入：给已有课程补充新时段会合并而非新建', () async {
+    final created = await repo.importEntries([
+      const ImportEntry(
+        name: '英语',
+        weekday: 1,
+        startMinute: 480,
+        endMinute: 580,
+      ),
+    ]);
+    expect(created.created, 1);
+    final before = (await db.select(db.courses).get()).single;
+    expect(await liveSessions(before.id), 1);
+
+    final report = await repo.importEntries([
+      const ImportEntry(
+        name: '英语',
+        weekday: 1,
+        startMinute: 480,
+        endMinute: 580,
+      ),
+      const ImportEntry(
+        name: '英语',
+        weekday: 3,
+        startMinute: 840,
+        endMinute: 940,
+      ),
+    ]);
+    expect(report.created, 0);
+    expect(report.updated, 1);
+    expect((await db.select(db.courses).get()).length, 1);
+    expect(await liveSessions(before.id), 2);
+  });
+
+  test('导入预览：能发现与已有课程的时间冲突', () async {
+    await repo.create(
+      name: '已存在的课',
+      sessions: const [
+        SessionInput(weekday: 1, startMinute: 480, endMinute: 580),
+      ],
+    );
+    final conflicts = await repo.previewImportConflicts([
+      const ImportEntry(
+        name: '新课',
+        weekday: 1,
+        startMinute: 500,
+        endMinute: 560,
+      ),
+    ]);
+    expect(conflicts, isNotEmpty);
+  });
+
   test('端到端：解析真实网页课表 → 入库 → 学期起始日', () async {
     final parsed = HtmlScheduleParser.parse(sampleScheduleHtml);
     final count = await repo.importEntries(parsed.entries);
-    expect(count, 6);
+    expect(count.total, 6);
 
     await db.setActiveTermStart(parsed.termStart!);
     final term = await (db.select(db.terms)

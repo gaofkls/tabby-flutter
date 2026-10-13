@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 
 import '../app/router.dart';
 import 'app_database.dart';
+import 'conflict_queries.dart';
+import 'conflicts.dart';
 import 'reminder.dart';
 import 'session_input.dart';
 
@@ -157,17 +159,81 @@ class CourseRepository {
     });
   }
 
-  /// 导入：同名课程合并成一门，多个时段挂在它下面。
-  Future<int> importEntries(List<ImportEntry> entries) async {
+  /// 导入前预览「冲突 / 重叠」：复用和手动加课同样的冲突算法。
+  ///
+  /// 同名课程会被合并而不会新增，所以这里把同名已有课程的时段排除，
+  /// 避免把「即将更新的课和已有同名课」误报成冲突。
+  Future<List<Conflict>> previewImportConflicts(
+      List<ImportEntry> entries) async {
+    if (entries.isEmpty) return const [];
+    final grouped = <String, List<SessionInput>>{};
+    final seenPerGroup = <String, Set<String>>{};
+    for (final e in entries) {
+      final name = e.name.trim();
+      final key = '${e.weekday}-${e.startMinute}-${e.endMinute}-${e.weeks}';
+      final set = seenPerGroup.putIfAbsent(name, () => {});
+      if (!set.add(key)) continue;
+      grouped.putIfAbsent(name, () => []).add(
+            SessionInput(
+              weekday: e.weekday,
+              startMinute: e.startMinute,
+              endMinute: e.endMinute,
+              weeks: e.weeks,
+            ),
+          );
+    }
+
+    final importedNames = grouped.keys.toSet();
+    final existingSessions = await loadLiveSessions(_db);
+    final existingItems = await loadLiveItems(_db);
+    final termStart = await loadActiveTermStart(_db);
+    final others = existingSessions
+        .where((s) => !importedNames.contains(s.course.name.trim()))
+        .toList();
+
+    final conflicts = <Conflict>[];
+    for (final entry in grouped.entries) {
+      conflicts.addAll(
+        findCourseConflicts(
+          sessions: entry.value,
+          existingSessions: others,
+          existingItems: existingItems,
+          termStart: termStart,
+        ),
+      );
+    }
+    return conflicts;
+  }
+
+  /// 导入：同名课程合并成一门，多个时段挂在它下面；**若数据库里已有同名
+  /// （同一学期、未删除）的课程，则把新时段合并进去并更新信息，而不是再建一门。**
+  ///
+  /// 这样重复导入同一张课表不会再产生重复课程。
+  Future<ImportReport> importEntries(List<ImportEntry> entries) async {
     final grouped = <String, List<ImportEntry>>{};
     for (final e in entries) {
       grouped.putIfAbsent(e.name.trim(), () => []).add(e);
     }
 
-    var count = 0;
+    final termId = await _activeTermId();
+    final existing = await (_db.select(_db.courses)
+          ..where((t) => t.deletedAt.isNull()))
+        .get();
+    final existingByName = {
+      for (final c in existing)
+        if (c.termId == termId) c.name.trim(): c
+    };
+
+    var created = 0;
+    var updated = 0;
     for (final entry in grouped.entries) {
+      final name = entry.key;
+
+      // 组内去重时段，并取第一条带上的教师 / 教室
       final sessions = <SessionInput>[];
       final seen = <String>{};
+      String? teacher;
+      String? location;
       for (final e in entry.value) {
         final key = '${e.weekday}-${e.startMinute}-${e.endMinute}-${e.weeks}';
         if (!seen.add(key)) continue;
@@ -179,18 +245,73 @@ class CourseRepository {
             weeks: e.weeks,
           ),
         );
+        teacher ??= e.teacher;
+        location ??= e.location;
       }
-      final first = entry.value.first;
-      await create(
-        name: entry.key,
-        teacher: first.teacher,
-        location: first.location,
-        sessions: sessions,
-      );
-      count++;
+
+      final existingCourse = existingByName[name];
+      if (existingCourse != null) {
+        // 合并时段：保留已有 + 新导入，整体去重，避免反复导入累积重复时段
+        final oldSessions = await (_db.select(_db.courseSessions)
+              ..where((t) => t.courseId.equals(existingCourse.id))
+              ..where((t) => t.deletedAt.isNull()))
+            .get();
+        final merged = <SessionInput>[];
+        final mergedSeen = <String>{};
+        void addSession(SessionInput s) {
+          final k = '${s.weekday}-${s.startMinute}-${s.endMinute}-${s.weeks}';
+          if (!mergedSeen.add(k)) return;
+          merged.add(s);
+        }
+
+        for (final s in oldSessions) {
+          addSession(
+            SessionInput(
+              weekday: s.weekday,
+              startMinute: s.startMinute,
+              endMinute: s.endMinute,
+              weeks: s.weeks,
+            ),
+          );
+        }
+        for (final s in sessions) {
+          addSession(s);
+        }
+
+        await update(
+          existingCourse.id,
+          name: name,
+          teacher: teacher,
+          location: location,
+          color: existingCourse.color,
+          sessions: merged,
+          reminder: ReminderSpec.fromDb(
+            existingCourse.reminderMode,
+            existingCourse.reminderValue,
+          ),
+        );
+        updated++;
+      } else {
+        await create(
+          name: name,
+          teacher: teacher,
+          location: location,
+          sessions: sessions,
+        );
+        created++;
+      }
     }
-    return count;
+    return ImportReport(created: created, updated: updated);
   }
+}
+
+/// 导入统计：新建了几门、更新（合并）了几门。
+class ImportReport {
+  const ImportReport({this.created = 0, this.updated = 0});
+
+  final int created;
+  final int updated;
+  int get total => created + updated;
 }
 
 /// 导入解析出来的一条上课安排。

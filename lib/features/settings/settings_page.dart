@@ -23,6 +23,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   int _pending = 0;
   bool? _permission;
+  bool? _exactAlarm;
   bool _busy = false;
 
   @override
@@ -34,6 +35,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _refreshNotificationState() async {
     _pending = await NotificationService.instance.pendingCount();
     _permission = NotificationService.instance.permissionGranted;
+    _exactAlarm = NotificationService.instance.exactAlarmGranted;
     if (mounted) setState(() {});
   }
 
@@ -171,6 +173,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       },
                       child: const Text('请求权限'),
                     ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.alarm_outlined),
+                    title: const Text('精确闹钟权限'),
+                    subtitle: Text(
+                      _exactAlarm == null
+                          ? '无法判断（当前平台）'
+                          : (_exactAlarm!
+                              ? '已授权 —— 定时提醒会精确响铃'
+                              : '未授权 —— 定时提醒可能不响，请在系统里允许「闹钟与提醒」'),
+                    ),
+                    trailing: _exactAlarm == true
+                        ? null
+                        : TextButton(
+                            onPressed: () async {
+                              await NotificationService.instance
+                                  .requestExactAlarmsPermission();
+                              await _refreshNotificationState();
+                              await _reschedule();
+                            },
+                            child: const Text('去授予'),
+                          ),
                   ),
                   const Divider(height: 1),
                   ListTile(

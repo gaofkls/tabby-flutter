@@ -28,12 +28,17 @@ class NotificationService {
 
   bool _initialized = false;
   bool? _permissionGranted;
+  bool? _exactAlarmGranted;
   String? _lastError;
 
   bool get isInitialized => _initialized;
 
   /// null 表示还没请求过 / 平台不支持
   bool? get permissionGranted => _permissionGranted;
+
+  /// 精确闹钟权限（Android 12+ 的 SCHEDULE_EXACT_ALARM）。
+  /// null 表示平台不支持 / 还没查过。
+  bool? get exactAlarmGranted => _exactAlarmGranted;
 
   String? get lastError => _lastError;
 
@@ -99,12 +104,36 @@ class NotificationService {
     }
   }
 
+  /// 请求「精确闹钟」权限。Android 12+ 上授予后 zonedSchedule 才能用精确模式；
+  /// 没授予时我们会自动退回 alarmClock 模式（同样可靠，且不依赖该权限）。
+  /// 该方法会跳转到系统设置页让用户开启，因此只在用户主动点「去授予」时调用，
+  /// 不在启动时自动弹，避免首启就跳系统界面。
+  Future<bool?> requestExactAlarmsPermission() async {
+    if (!_initialized) return null;
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      final granted = await android?.requestExactAlarmsPermission();
+      _exactAlarmGranted = granted;
+      return granted;
+    } catch (e) {
+      _lastError = '$e';
+      return null;
+    }
+  }
+
   /// 用一批提醒任务整体替换系统里已排的通知。
   /// 先清空再排，因为课程改了以后旧的定时就没意义了。
   Future<int> applyPlan(List<ReminderTask> tasks) async {
     if (!_initialized) return 0;
     try {
       await _plugin.cancelAll();
+      // 已授予精确闹钟权限时用精确模式；否则退回 alarmClock：它不依赖该权限、
+      // 且能更可靠地在到点时「叫醒」用户（绕过勿扰、出现在系统闹钟里）。
+      final exact = _exactAlarmGranted ?? false;
+      final mode = exact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.alarmClock;
       var count = 0;
       for (var i = 0; i < tasks.length; i++) {
         final task = tasks[i];
@@ -116,7 +145,7 @@ class NotificationService {
           body: task.body,
           scheduledDate: scheduled,
           notificationDetails: _details,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: mode,
           payload: task.payload,
         );
         count++;

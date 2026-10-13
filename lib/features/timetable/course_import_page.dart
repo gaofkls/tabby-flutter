@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
+import '../../data/conflicts.dart';
 import '../../data/course_repository.dart';
 import '../../data/html_schedule_parser.dart';
 import '../../data/sample_schedule_html.dart';
@@ -33,6 +34,7 @@ class _CourseImportPageState extends ConsumerState<CourseImportPage> {
   bool _importing = false;
   bool _isHtml = false;
   bool _applyTermStart = true;
+  List<Conflict> _conflicts = const [];
 
   @override
   void dispose() {
@@ -53,6 +55,18 @@ class _CourseImportPageState extends ConsumerState<CourseImportPage> {
         ..clear()
         ..addAll(List.generate(result.entries.length, (i) => i));
     });
+    _previewConflicts(result);
+  }
+
+  Future<void> _previewConflicts(ImportResult result) async {
+    if (result.entries.isEmpty) {
+      if (mounted) setState(() => _conflicts = const []);
+      return;
+    }
+    final conflicts = await ref
+        .read(courseRepositoryProvider)
+        .previewImportConflicts(result.entries);
+    if (mounted) setState(() => _conflicts = conflicts);
   }
 
   Future<void> _import() async {
@@ -69,13 +83,19 @@ class _CourseImportPageState extends ConsumerState<CourseImportPage> {
       if (result.termStart != null && _applyTermStart) {
         await db.setActiveTermStart(result.termStart!);
       }
-      final count = await ref
+      final report = await ref
           .read(courseRepositoryProvider)
           .importEntries(chosen);
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已导入 $count 门课')),
+        SnackBar(
+          content: Text(
+            report.total == 0
+                ? '没有可导入的条目'
+                : '已导入：新建 ${report.created} 门、更新 ${report.updated} 门',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -183,6 +203,31 @@ class _CourseImportPageState extends ConsumerState<CourseImportPage> {
             ],
             const SizedBox(height: 12),
             const Divider(height: 1),
+            if (_conflicts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Card(
+                color: theme.colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          color: theme.colorScheme.error, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '检测到 ${_conflicts.length} 处时间冲突 / 重叠'
+                          '（可能与已有课程或备忘撞课），导入后请留意。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             Expanded(
               child: result == null
                   ? const Center(child: Text('粘贴后点「解析」'))

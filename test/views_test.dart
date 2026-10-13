@@ -1,6 +1,10 @@
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:tabby/app/router.dart';
 import 'package:tabby/data/app_database.dart';
 import 'package:tabby/data/occurrence.dart';
 import 'package:tabby/features/calendar/month_grid.dart';
@@ -8,6 +12,10 @@ import 'package:tabby/features/timetable/course_import_page.dart';
 import 'package:tabby/features/timetable/week_grid.dart';
 
 void main() {
+  setUpAll(() {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  });
+
   final now = DateTime.now();
   final monday = DateTime(2026, 10, 12); // 周一
 
@@ -109,7 +117,13 @@ void main() {
 
   testWidgets('导入页：填文本示例 → 解析出预览清单', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: CourseImportPage()),
+      ProviderScope(
+        overrides: [
+          databaseProvider
+              .overrideWithValue(AppDatabase(NativeDatabase.memory())),
+        ],
+        child: const MaterialApp(home: CourseImportPage()),
+      ),
     );
 
     await tester.tap(find.text('填文本示例'));
@@ -124,7 +138,13 @@ void main() {
 
   testWidgets('导入页：填网页示例 → 认出 HTML 课表与学期起始日', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: CourseImportPage()),
+      ProviderScope(
+        overrides: [
+          databaseProvider
+              .overrideWithValue(AppDatabase(NativeDatabase.memory())),
+        ],
+        child: const MaterialApp(home: CourseImportPage()),
+      ),
     );
 
     await tester.tap(find.text('填网页示例'));
