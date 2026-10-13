@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../../app/router.dart';
+import '../../data/alarm_mode.dart';
 import '../../data/occurrence.dart';
 import '../../data/reminder.dart';
 import '../../data/reminder_providers.dart';
 import '../../data/week_helpers.dart';
+import '../../services/alarm_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/system_settings.dart';
 import '../../services/widget_data_service.dart';
@@ -31,6 +33,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool? _exactAlarm;
   bool _busy = false;
 
+  ReminderDelivery _delivery = ReminderDelivery.notification;
+  int _alarmsPending = 0;
+
   /// 桌面上已经加了的本 App 小组件数量。-1 表示查不到（平台不支持等）。
   int _installedWidgets = -1;
   String _widgetDataSummary = '未知';
@@ -45,8 +50,48 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _pending = await NotificationService.instance.pendingCount();
     _permission = NotificationService.instance.permissionGranted;
     _exactAlarm = NotificationService.instance.exactAlarmGranted;
+    _delivery = await AlarmService.instance.loadMode();
+    _alarmsPending = await AlarmService.instance.pendingCount();
     await _refreshWidgetDiagnostics();
     if (mounted) setState(() {});
+  }
+
+  /// 排障用：10 秒后弹出 App 的响铃页面（真闹钟那条路）。
+  Future<void> _testAlarmScreen() async {
+    final count = await AlarmService.instance.scheduleAll([
+      ReminderTask(
+        title: 'Tabby 闹钟测试',
+        body: '这是 App 自带的响铃页面，会一直响到你点关闭',
+        scheduledAt: DateTime.now().add(const Duration(seconds: 10)),
+      ),
+    ]);
+    await _refreshNotificationState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(count > 0
+            ? '已排 1 条，10 秒后应该弹出响铃页面（测完记得点「立即重排」恢复）'
+            : '排不上：当前平台不支持原生闹钟'),
+      ),
+    );
+  }
+
+  /// 排障用：打开系统「设置闹钟」界面，验证系统时钟那条路通不通。
+  Future<void> _testSystemAlarm() async {
+    final at = DateTime.now().add(const Duration(minutes: 2));
+    final ok = await AlarmService.instance.openSystemAlarm(
+      hour: at.hour,
+      minute: at.minute,
+      message: 'Tabby 提醒',
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? '已打开系统闹钟界面，确认后由系统时钟负责响铃'
+            : '打不开：这台设备没有可用的系统闹钟界面'),
+      ),
+    );
   }
 
   /// 小组件的排障信息：系统里有没有加、数据快照写没写进去。
@@ -225,6 +270,82 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             Card(
               child: Column(
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.alarm, size: 20),
+                            const SizedBox(width: 10),
+                            Text('提醒怎么响', style: theme.textTheme.titleSmall),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '通知只会「叮」一声就结束，要真正把人叫醒得用下面两种方式之一。'
+                          '切到「App 闹钟响铃」后，通知会停发，改由 App 自己的响铃页面负责。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        RadioGroup<ReminderDelivery>(
+                          groupValue: _delivery,
+                          onChanged: (v) async {
+                            if (v == null) return;
+                            setState(() => _delivery = v);
+                            await AlarmService.instance.saveMode(v);
+                            await _reschedule();
+                          },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final mode in ReminderDelivery.values)
+                                RadioListTile<ReminderDelivery>(
+                                  value: mode,
+                                  dense: true,
+                                  title: Text(mode.label),
+                                  subtitle: Text(
+                                    mode.description,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _testAlarmScreen,
+                              icon: const Icon(Icons.ring_volume_outlined,
+                                  size: 18),
+                              label: const Text('10 秒后响铃测试'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _testSystemAlarm,
+                              icon: const Icon(Icons.alarm_add_outlined,
+                                  size: 18),
+                              label: const Text('打开系统闹钟界面'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '已排定的闹钟：$_alarmsPending 条'
+                          '（切到「系统时钟闹钟」时这里会是 0，'
+                          '因为那些闹钟由系统时钟管）',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.notifications_outlined),
                     title: const Text('默认提醒'),

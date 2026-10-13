@@ -1,8 +1,10 @@
 import 'package:drift/drift.dart' hide Column;
 
+import 'alarm_mode.dart';
 import 'app_database.dart';
 import 'occurrence.dart';
 import 'reminder.dart';
+import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
 
 /// 把未来的课程和备忘展开成一批系统提醒。
@@ -117,9 +119,32 @@ class ReminderScheduler {
     return applyPlan(tasks);
   }
 
-  /// 展开后的任务交给系统。
-  Future<int> applyPlan(List<ReminderTask> tasks) =>
-      NotificationService.instance.applyPlan(tasks);
+  /// 展开后的任务按「提醒方式」交给对应的通道。
+  ///
+  /// - appAlarm：交给原生 AlarmManager，到点弹响铃页面（真闹钟）
+  /// - systemClock：我们不管排程，由用户在系统时钟里手动建（见
+  ///   AlarmService.openSystemAlarm），这里只把已排的通知/闹钟清掉，避免重复响
+  /// - notification：发系统通知
+  Future<int> applyPlan(List<ReminderTask> tasks) async {
+    final alarm = AlarmService.instance;
+    if (!await alarm.isSupported()) {
+      return NotificationService.instance.applyPlan(tasks);
+    }
+
+    switch (await alarm.loadMode()) {
+      case ReminderDelivery.appAlarm:
+        // 通知和闹钟只留一种，否则会又弹通知又响铃
+        await NotificationService.instance.cancelAll();
+        return alarm.scheduleAll(tasks);
+      case ReminderDelivery.systemClock:
+        await NotificationService.instance.cancelAll();
+        await alarm.cancelAll();
+        return 0;
+      case ReminderDelivery.notification:
+        await alarm.cancelAll();
+        return NotificationService.instance.applyPlan(tasks);
+    }
+  }
 
   static String _courseBody(Course course, CourseSession s) {
     final when = _hm(s.startMinute);

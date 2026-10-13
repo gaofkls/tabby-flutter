@@ -7,6 +7,9 @@
     <!-- 精确到分钟发通知（闹钟） -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <!-- 闹钟到点时把响铃页面顶到锁屏之上 -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
         android:label="tabby"
@@ -36,6 +39,29 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/tabby_widget_info" />
         </receiver>
+        <!-- 真正的闹钟：系统 AlarmManager 到点拉起这个页面，锁屏之上显示并循环响铃 -->
+        <receiver
+            android:name=".TabbyAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".TabbyAlarmBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".TabbyAlarmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

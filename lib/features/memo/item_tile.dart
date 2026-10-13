@@ -5,6 +5,7 @@ import '../../data/app_database.dart';
 import '../../data/item_repository.dart';
 import '../../data/reminder.dart';
 import '../../data/reminder_providers.dart';
+import '../../services/alarm_service.dart';
 import '../reminder/reminder_picker.dart';
 import 'memo_editor.dart';
 
@@ -52,6 +53,43 @@ class ItemTile extends ConsumerWidget {
     await ref.read(itemRepositoryProvider).setReminder(item.id, picked);
   }
 
+  /// 把这条备忘交给手机自带的「时钟」去响。
+  /// 系统不允许第三方静默建闹钟，所以只能打开系统的设置闹钟界面让人确认一次。
+  Future<void> _openSystemAlarm(BuildContext context, WidgetRef ref) async {
+    final due = item.dueDate;
+    if (due == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('这条没写日期，先给它定个日期')),
+      );
+      return;
+    }
+    final fallback = ref.read(defaultReminderProvider).value ??
+        ReminderSpec.defaultValue;
+    final spec = ReminderSpec.fromDb(item.reminderMode, item.reminderValue) ??
+        fallback;
+    final start = DateTime(
+      due.year,
+      due.month,
+      due.day,
+    ).add(Duration(minutes: item.dueMinute ?? 0));
+    final at = spec.resolve(start) ?? start;
+
+    final ok = await AlarmService.instance.openSystemAlarm(
+      hour: at.hour,
+      minute: at.minute,
+      message: item.title,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? '已打开系统闹钟界面，确认后由系统时钟在 ${at.hour}:'
+                '${at.minute.toString().padLeft(2, '0')} 响铃'
+            : '打不开系统闹钟界面'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -83,6 +121,8 @@ class ItemTile extends ConsumerWidget {
               await showMemoEditor(context, item: item);
             } else if (value == 'reminder') {
               await _pickReminder(context, ref);
+            } else if (value == 'systemAlarm') {
+              await _openSystemAlarm(context, ref);
             } else if (value == 'delete') {
               await _confirmDelete(context, ref);
             }
@@ -90,6 +130,10 @@ class ItemTile extends ConsumerWidget {
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'edit', child: Text('编辑')),
             const PopupMenuItem(value: 'reminder', child: Text('设置提醒')),
+            const PopupMenuItem(
+              value: 'systemAlarm',
+              child: Text('用系统闹钟提醒'),
+            ),
             const PopupMenuItem(value: 'delete', child: Text('删除')),
           ],
         ),
