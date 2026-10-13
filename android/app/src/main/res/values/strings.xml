@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label">Tabby 备忘</string>
+    <string name="widget_description">显示今天和明天的备忘</string>
+</resources>

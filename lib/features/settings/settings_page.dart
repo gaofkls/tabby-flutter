@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_widget/home_widget.dart';
@@ -8,6 +10,7 @@ import '../../data/reminder.dart';
 import '../../data/reminder_providers.dart';
 import '../../data/week_helpers.dart';
 import '../../services/notification_service.dart';
+import '../../services/widget_data_service.dart';
 import '../reminder/reminder_picker.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -27,6 +30,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool? _exactAlarm;
   bool _busy = false;
 
+  /// 桌面上已经加了的本 App 小组件数量。-1 表示查不到（平台不支持等）。
+  int _installedWidgets = -1;
+  String _widgetDataSummary = '未知';
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +44,43 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _pending = await NotificationService.instance.pendingCount();
     _permission = NotificationService.instance.permissionGranted;
     _exactAlarm = NotificationService.instance.exactAlarmGranted;
+    await _refreshWidgetDiagnostics();
     if (mounted) setState(() {});
+  }
+
+  /// 小组件的排障信息：系统里有没有加、数据快照写没写进去。
+  /// 有了这个就能区分「没添加到桌面」和「添加了但没数据」。
+  Future<void> _refreshWidgetDiagnostics() async {
+    try {
+      final installed = await HomeWidget.getInstalledWidgets();
+      _installedWidgets = installed.length;
+    } catch (_) {
+      _installedWidgets = -1;
+    }
+    try {
+      final raw =
+          await HomeWidget.getWidgetData<String>(WidgetDataService.dataKey);
+      if (raw == null) {
+        _widgetDataSummary = '未写入';
+      } else {
+        final decoded = jsonDecode(raw);
+        final items =
+            (decoded is Map ? decoded['items'] as List<dynamic>? : null) ?? [];
+        _widgetDataSummary = '已写入 ${items.length} 条';
+      }
+    } catch (_) {
+      _widgetDataSummary = '读取失败';
+    }
+  }
+
+  Future<void> _refreshWidget() async {
+    final ok = await ref.read(widgetDataServiceProvider).refresh();
+    await _refreshWidgetDiagnostics();
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '已刷新小组件数据' : '刷新失败（平台不支持或未添加小组件）')),
+    );
   }
 
   Future<void> _reschedule() async {
@@ -214,6 +257,43 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             child: const Text('去授予'),
                           ),
                   ),
+                  if (NotificationService.instance.isDegraded)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.report_outlined,
+                                  size: 18, color: theme.colorScheme.error),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '提醒已降级：系统没授予「闹钟与提醒」',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.error,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            '提醒仍然会响，但系统可能把它延后几分钟。'
+                            '要点开上面的「去授予」在系统里允许；'
+                            '小米 / Redmi 还需要在「应用设置 → 自启动 + 电池无限制」里放行。',
+                          ),
+                        ],
+                      ),
+                    ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.schedule_send_outlined),
@@ -288,16 +368,45 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             Text('桌面小组件', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
             Card(
-              child: ListTile(
-                leading: const Icon(Icons.widgets_outlined),
-                title: const Text('把「今天 / 明天备忘」放到桌面'),
-                subtitle: const Text(
-                  '添加后显示今天和明天的备忘；备忘一改动会自动刷新',
-                ),
-                trailing: TextButton(
-                  onPressed: _pinWidget,
-                  child: const Text('添加到桌面'),
-                ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.widgets_outlined),
+                    title: const Text('把「今天 / 明天备忘」放到桌面'),
+                    subtitle: const Text(
+                      '添加后显示今天和明天的备忘；备忘一改动会自动刷新',
+                    ),
+                    trailing: TextButton(
+                      onPressed: _pinWidget,
+                      child: const Text('添加到桌面'),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.analytics_outlined, size: 20),
+                    title: const Text('排障信息'),
+                    subtitle: Text(
+                      '系统里已添加 ${_installedWidgets < 0 ? '未知' : '$_installedWidgets'} 个'
+                      ' · 数据快照：$_widgetDataSummary',
+                    ),
+                    trailing: TextButton(
+                      onPressed: _refreshWidget,
+                      child: const Text('刷新数据'),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Text(
+                      '如果「已添加 0 个」：小组件还没放到桌面 —— 请长按桌面空白处，'
+                      '选「添加小部件 / 小工具」，在列表里找到 Tabby 拖上去。'
+                      '如果出现「已添加 1 个」但桌面还是空的，'
+                      '多为小米后台限制：给本 App 开「自启动」和「电池无限制」后重启再试。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),

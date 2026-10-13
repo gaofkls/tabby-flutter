@@ -54,7 +54,13 @@ class TabbyWidget : AppWidgetProvider() {
         val pendingIntent = PendingIntent.getActivity(context, 0, launchIntent, flags)
         views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
 
-        val entries = loadEntries(context)
+        // 读数据出错时宁可显示空态，也不要让 onUpdate 抛异常——
+        // 一抛系统就会把整个小组件画成「加载失败」。
+        val entries = try {
+            loadEntries(context)
+        } catch (e: Exception) {
+            emptyList()
+        }
 
         val rowIds = intArrayOf(R.id.row_0, R.id.row_1, R.id.row_2, R.id.row_3)
         val tagIds = intArrayOf(R.id.tag_0, R.id.tag_1, R.id.tag_2, R.id.tag_3)

@@ -29,6 +29,7 @@ class NotificationService {
   bool _initialized = false;
   bool? _permissionGranted;
   bool? _exactAlarmGranted;
+  AndroidScheduleMode? _scheduleMode;
   String? _lastError;
 
   bool get isInitialized => _initialized;
@@ -39,6 +40,15 @@ class NotificationService {
   /// 精确闹钟权限（Android 12+ 的 SCHEDULE_EXACT_ALARM）。
   /// null 表示平台不支持 / 还没查过。
   bool? get exactAlarmGranted => _exactAlarmGranted;
+
+  /// 最近一次排程实际用上的模式。null 表示还没排过。
+  AndroidScheduleMode? get scheduleModeUsed => _scheduleMode;
+
+  /// 是否因为缺少「闹钟和提醒」权限而降级成了不精确的提醒。
+  /// 降级后提醒仍会响，但可能被系统延后几分钟。
+  bool get isDegraded =>
+      _scheduleMode == AndroidScheduleMode.inexactAllowWhileIdle ||
+      _scheduleMode == AndroidScheduleMode.inexact;
 
   String? get lastError => _lastError;
 
@@ -122,33 +132,60 @@ class NotificationService {
     }
   }
 
+  /// 排程模式从优到劣的候选。
+  ///
+  /// Android 12+ 没授予「闹钟和提醒」（SCHEDULE_EXACT_ALARM）时，
+  /// 插件原生侧对 exact 和 alarmClock 两种模式都会抛
+  /// ExactAlarmPermissionException，于是整批提醒一条都排不上——
+  /// 表现就是「设了提醒但闹钟不响」。所以这里按候选顺序探测，
+  /// 最差也要落到不精确模式（不要求该权限），保证提醒真的会来。
+  static const List<AndroidScheduleMode> _scheduleModeCandidates = [
+    AndroidScheduleMode.exactAllowWhileIdle,
+    AndroidScheduleMode.alarmClock,
+    AndroidScheduleMode.inexactAllowWhileIdle,
+  ];
+
   /// 用一批提醒任务整体替换系统里已排的通知。
   /// 先清空再排，因为课程改了以后旧的定时就没意义了。
   Future<int> applyPlan(List<ReminderTask> tasks) async {
     if (!_initialized) return 0;
     try {
       await _plugin.cancelAll();
-      // 已授予精确闹钟权限时用精确模式；否则退回 alarmClock：它不依赖该权限、
-      // 且能更可靠地在到点时「叫醒」用户（绕过勿扰、出现在系统闹钟里）。
-      final exact = _exactAlarmGranted ?? false;
-      final mode = exact
-          ? AndroidScheduleMode.exactAllowWhileIdle
-          : AndroidScheduleMode.alarmClock;
-      var count = 0;
-      for (var i = 0; i < tasks.length; i++) {
-        final task = tasks[i];
-        final scheduled =
-            tz.TZDateTime.from(task.scheduledAt, tz.UTC);
-        await _plugin.zonedSchedule(
-          id: i + 1,
-          title: task.title,
-          body: task.body,
-          scheduledDate: scheduled,
-          notificationDetails: _details,
-          androidScheduleMode: mode,
-          payload: task.payload,
-        );
-        count++;
+      _scheduleMode = null;
+      if (tasks.isEmpty) {
+        _lastError = null;
+        return 0;
+      }
+
+      // 用第一条探测当前设备能用哪种模式，之后整批复用。
+      AndroidScheduleMode? mode;
+      for (final candidate in _scheduleModeCandidates) {
+        try {
+          await _scheduleOne(1, tasks.first, candidate);
+          mode = candidate;
+          break;
+        } catch (e) {
+          _lastError = '$e';
+        }
+      }
+      if (mode == null) {
+        _exactAlarmGranted = false;
+        return 0;
+      }
+
+      _scheduleMode = mode;
+      _exactAlarmGranted =
+          mode == AndroidScheduleMode.exactAllowWhileIdle ||
+          mode == AndroidScheduleMode.alarmClock;
+
+      var count = 1;
+      for (var i = 1; i < tasks.length; i++) {
+        try {
+          await _scheduleOne(i + 1, tasks[i], mode);
+          count++;
+        } catch (_) {
+          // 单条失败不该拖垮整批提醒
+        }
       }
       _lastError = null;
       return count;
@@ -156,6 +193,25 @@ class NotificationService {
       _lastError = '$e';
       return 0;
     }
+  }
+
+  Future<void> _scheduleOne(
+    int id,
+    ReminderTask task,
+    AndroidScheduleMode mode,
+  ) {
+    // 插件原生侧拿的是「墙上时钟 + 时区名」，再把它们合成瞬时。
+    // 用 UTC 承载本地 DateTime：瞬时不变，墙上时钟会被换算成 UTC 表示，
+    // 原生用 ZoneId=UTC 反解回来正好是同一个瞬时，因此不需要 tz 数据库。
+    return _plugin.zonedSchedule(
+      id: id,
+      title: task.title,
+      body: task.body,
+      scheduledDate: tz.TZDateTime.from(task.scheduledAt, tz.UTC),
+      notificationDetails: _details,
+      androidScheduleMode: mode,
+      payload: task.payload,
+    );
   }
 
   Future<int> pendingCount() async {
