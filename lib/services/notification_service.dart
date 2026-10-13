@@ -52,6 +52,10 @@ class NotificationService {
 
   String? get lastError => _lastError;
 
+  /// 排障用通知的 id，避开正式提醒占用的 1..N。
+  static const int _testNowId = 900001;
+  static const int _testScheduleId = 900002;
+
   static const AndroidNotificationDetails _androidDetails =
       AndroidNotificationDetails(
     'tabby_reminders',
@@ -212,6 +216,48 @@ class NotificationService {
       androidScheduleMode: mode,
       payload: task.payload,
     );
+  }
+
+  /// 排障用：立刻发一条通知。
+  /// 用来验证「系统通知通道」本身通不通（权限 + 渠道）。
+  Future<bool> showNow() async {
+    if (!_initialized) return false;
+    try {
+      await _plugin.show(
+        id: _testNowId,
+        title: 'Tabby 测试通知',
+        body: '看到这条说明通知权限和渠道都正常',
+        notificationDetails: _details,
+      );
+      return true;
+    } catch (e) {
+      _lastError = '$e';
+      return false;
+    }
+  }
+
+  /// 排障用：[seconds] 秒后排一条提醒。
+  /// 用来验证「定时排程」到底会不会触发。返回给人看的结论（含实际用上的模式）。
+  Future<String> scheduleTestAfter(int seconds) async {
+    if (!_initialized) return '通知还没初始化';
+    final at = DateTime.now().add(Duration(seconds: seconds));
+    for (final candidate in _scheduleModeCandidates) {
+      try {
+        await _scheduleOne(
+          _testScheduleId,
+          ReminderTask(
+            title: 'Tabby 定时测试',
+            body: '排程正常的话，这条会在设定时间出现',
+            scheduledAt: at,
+          ),
+          candidate,
+        );
+        return '已用 ${candidate.name} 排好，$seconds 秒后应该会响';
+      } catch (e) {
+        _lastError = '$e';
+      }
+    }
+    return '三种模式都排不上：$_lastError';
   }
 
   Future<int> pendingCount() async {

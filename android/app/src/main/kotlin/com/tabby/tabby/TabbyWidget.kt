@@ -62,13 +62,26 @@ class TabbyWidget : AppWidgetProvider() {
             emptyList()
         }
 
-        val rowIds = intArrayOf(R.id.row_0, R.id.row_1, R.id.row_2, R.id.row_3)
-        val tagIds = intArrayOf(R.id.tag_0, R.id.tag_1, R.id.tag_2, R.id.tag_3)
-        val titleIds = intArrayOf(R.id.title_0, R.id.title_1, R.id.title_2, R.id.title_3)
-        val timeIds = intArrayOf(R.id.time_0, R.id.time_1, R.id.time_2, R.id.time_3)
+        val rowIds = intArrayOf(
+            R.id.row_0, R.id.row_1, R.id.row_2, R.id.row_3,
+            R.id.row_4, R.id.row_5, R.id.row_6, R.id.row_7,
+        )
+        val tagIds = intArrayOf(
+            R.id.tag_0, R.id.tag_1, R.id.tag_2, R.id.tag_3,
+            R.id.tag_4, R.id.tag_5, R.id.tag_6, R.id.tag_7,
+        )
+        val titleIds = intArrayOf(
+            R.id.title_0, R.id.title_1, R.id.title_2, R.id.title_3,
+            R.id.title_4, R.id.title_5, R.id.title_6, R.id.title_7,
+        )
+        val timeIds = intArrayOf(
+            R.id.time_0, R.id.time_1, R.id.time_2, R.id.time_3,
+            R.id.time_4, R.id.time_5, R.id.time_6, R.id.time_7,
+        )
 
         if (entries.isEmpty()) {
             views.setViewVisibility(R.id.text_empty, View.VISIBLE)
+            views.setViewVisibility(R.id.text_more, View.GONE)
             for (rowId in rowIds) views.setViewVisibility(rowId, View.GONE)
         } else {
             views.setViewVisibility(R.id.text_empty, View.GONE)
@@ -82,6 +95,14 @@ class TabbyWidget : AppWidgetProvider() {
                 views.setTextViewText(tagIds[i], entry.tag)
                 views.setTextViewText(titleIds[i], entry.title)
                 views.setTextViewText(timeIds[i], entry.timeText)
+            }
+            // 放不下的用一行「还有 N 条」兜底，避免用户以为只有这些
+            val hidden = entries.size - rowIds.size
+            if (hidden > 0) {
+                views.setViewVisibility(R.id.text_more, View.VISIBLE)
+                views.setTextViewText(R.id.text_more, "还有 $hidden 条…")
+            } else {
+                views.setViewVisibility(R.id.text_more, View.GONE)
             }
         }
 

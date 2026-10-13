@@ -73,6 +73,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
+  /// 排障用：立刻发一条通知，验证通知权限 + 渠道是否真的能显示。
+  Future<void> _testNotification() async {
+    final ok = await NotificationService.instance.showNow();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? '已发送，看看通知栏有没有出现'
+            : '发送失败：${NotificationService.instance.lastError ?? '未知'}'),
+      ),
+    );
+  }
+
+  /// 排障用：10 秒后排一条提醒，验证定时排程能不能触发。
+  Future<void> _testSchedule() async {
+    final result = await NotificationService.instance.scheduleTestAfter(10);
+    await _refreshNotificationState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result)),
+    );
+  }
+
   Future<void> _refreshWidget() async {
     final ok = await ref.read(widgetDataServiceProvider).refresh();
     await _refreshWidgetDiagnostics();
@@ -304,6 +327,51 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     trailing: TextButton(
                       onPressed: _busy ? null : _reschedule,
                       child: const Text('立即重排'),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('闹钟排障', style: theme.textTheme.labelLarge),
+                        const SizedBox(height: 4),
+                        Text(
+                          '先点「发测试通知」：通知栏不出现＝通知权限或渠道被系统拦了。'
+                          '出现了再点「10 秒后测试」：不响＝定时排程被系统拦了。'
+                          '当前实际排程模式：${NotificationService.instance.scheduleModeUsed?.name ?? '还没排过'}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _testNotification,
+                              icon: const Icon(Icons.send_outlined, size: 18),
+                              label: const Text('发测试通知'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _testSchedule,
+                              icon: const Icon(Icons.timer_outlined, size: 18),
+                              label: const Text('10 秒后测试'),
+                            ),
+                          ],
+                        ),
+                        if (NotificationService.instance.lastError != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '最近一次错误：${NotificationService.instance.lastError}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   const Divider(height: 1),

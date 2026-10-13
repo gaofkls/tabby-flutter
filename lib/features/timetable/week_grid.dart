@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,10 +8,39 @@ import '../../data/occurrence.dart';
 import '../memo/memo_editor.dart';
 import 'course_editor.dart';
 
-const _startHour = 7;
-const _endHour = 22;
+/// 默认显示范围。如果课表里真有更早 / 更晚的课，会自动往外扩，
+/// 免得早课和晚课被裁掉看不见。
+const _defaultStartHour = 7;
+const _defaultEndHour = 22;
 const _hourHeight = 58.0;
 const _gutter = 52.0;
+
+/// 按当周实际的课算出时间轴范围：默认区间和数据区间取并集，
+/// 两头各留 1 小时余量，并夹在 0–24 之内。
+({int start, int end}) _hourRange(Iterable<Occurrence> timed) {
+  var minHour = _defaultStartHour;
+  var maxHour = _defaultEndHour;
+  var hasData = false;
+  var lo = 24 * 60;
+  var hi = 0;
+  for (final o in timed) {
+    final s = o.startMinute;
+    if (s == null) continue;
+    hasData = true;
+    if (s < lo) lo = s;
+    final e = o.endMinute ?? s + 60;
+    if (e > hi) hi = e;
+  }
+  if (hasData) {
+    minHour = math.min(minHour, lo ~/ 60);
+    // 结束时间向上取整到整点，保证最后一节课能看到完整的块
+    maxHour = math.max(maxHour, (hi / 60).ceil());
+  }
+  return (
+    start: minHour.clamp(0, 24),
+    end: maxHour.clamp(minHour + 1, 24),
+  );
+}
 
 const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -37,6 +68,9 @@ class WeekTimetable extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final colWidth = (constraints.maxWidth - _gutter) / 7;
+        final range = _hourRange(occurrences.timed);
+        final startHour = range.start;
+        final endHour = range.end;
 
         final byDay = List.generate(7, (_) => <Occurrence>[]);
         for (final o in occurrences.timed) {
@@ -71,9 +105,10 @@ class WeekTimetable extends StatelessWidget {
           for (final o in byDay[d]) {
             final start = o.startMinute! / 60;
             final end = (o.endMinute ?? o.startMinute! + 60) / 60;
-            final top = (start - _startHour) * _hourHeight;
+            final top = (start - startHour) * _hourHeight;
             final height = (end - start) * _hourHeight;
-            if (top > (_endHour - _startHour) * _hourHeight) continue;
+            // 夹在时间轴范围内的块才画；范围已经按数据扩过了，正常不会走到这里
+            if (top > (endHour - startHour) * _hourHeight) continue;
             blocks.add(
               Positioned(
                 left: _gutter + d * colWidth + laneOf[o]! * width + 1,
@@ -173,14 +208,14 @@ class WeekTimetable extends StatelessWidget {
               ),
               const Divider(height: 1),
               SizedBox(
-                height: (_endHour - _startHour) * _hourHeight,
+                height: (endHour - startHour) * _hourHeight,
                 child: Stack(
                   children: [
-                    for (var h = _startHour; h <= _endHour; h++)
+                    for (var h = startHour; h <= endHour; h++)
                       Positioned(
                         left: 0,
                         right: 0,
-                        top: (h - _startHour) * _hourHeight,
+                        top: (h - startHour) * _hourHeight,
                         child: Divider(
                           height: 1,
                           color: theme.dividerColor.withValues(alpha: 0.35),
@@ -196,11 +231,11 @@ class WeekTimetable extends StatelessWidget {
                           color: theme.dividerColor.withValues(alpha: 0.35),
                         ),
                       ),
-                    for (var h = _startHour; h < _endHour; h++)
+                    for (var h = startHour; h < endHour; h++)
                       Positioned(
                         left: 0,
                         width: _gutter - 8,
-                        top: (h - _startHour) * _hourHeight - 7,
+                        top: (h - startHour) * _hourHeight - 7,
                         child: Text(
                           '$h:00',
                           textAlign: TextAlign.right,
