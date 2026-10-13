@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -56,16 +58,53 @@ class NotificationService {
   static const int _testNowId = 900001;
   static const int _testScheduleId = 900002;
 
-  static const AndroidNotificationDetails _androidDetails =
-      AndroidNotificationDetails(
-    'tabby_reminders',
+  /// 渠道 id 变更历史：
+  /// - tabby_reminders      v1：无声音配置，在部分机型（尤其 MIUI）被归为静默通知
+  /// - tabby_reminders_alarm v2：按「闹钟」建渠道（最大重要性 + 铃声 + 震动
+  ///   + 闹钟音频流 + 绕过勿扰）。
+  ///
+  /// Android 通知渠道的声音 / 重要性一旦创建就锁死，改代码对已建渠道无效，
+  /// 所以必须换一个新 id 才会生效。老渠道在 init 里尝试删除。
+  static const String channelId = 'tabby_reminders_alarm';
+  static const String _legacyChannelId = 'tabby_reminders';
+
+  static final AndroidNotificationChannel _channel =
+      AndroidNotificationChannel(
+    channelId,
     '课程与备忘提醒',
-    channelDescription: '上课和备忘到点前提醒',
+    description: '上课和备忘到点前响铃提醒',
     importance: Importance.max,
-    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+    vibrationPattern: _vibration,
+    bypassDnd: true,
+    // 闹钟音频流：跟系统闹钟走同一条音量通道，也不受媒体静音影响。
+    audioAttributesUsage: AudioAttributesUsage.alarm,
   );
 
-  static const NotificationDetails _details = NotificationDetails(
+  /// 响一下 → 停 → 再响，比默认的单次震动更像闹钟。
+  static final Int64List _vibration =
+      Int64List.fromList(<int>[0, 500, 300, 500, 300, 500]);
+
+  static final AndroidNotificationDetails _androidDetails =
+      AndroidNotificationDetails(
+    channelId,
+    '课程与备忘提醒',
+    channelDescription: '上课和备忘到点前响铃提醒',
+    importance: Importance.max,
+    priority: Priority.max,
+    playSound: true,
+    enableVibration: true,
+    vibrationPattern: _vibration,
+    // 标记为「闹钟」：系统会按闹钟对待（部分 ROM 允许其穿透勿扰）。
+    category: AndroidNotificationCategory.alarm,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+    channelBypassDnd: true,
+    visibility: NotificationVisibility.public,
+    onlyAlertOnce: false,
+  );
+
+  static final NotificationDetails _details = NotificationDetails(
     android: _androidDetails,
     iOS: DarwinNotificationDetails(),
     macOS: DarwinNotificationDetails(),
@@ -83,10 +122,30 @@ class NotificationService {
       );
       _initialized = true;
       await requestPermission();
+      await _setupChannel();
     } catch (e) {
       // 平台不支持（比如 Linux / 单测环境）时不影响 app 其它功能
       _lastError = '$e';
       _initialized = false;
+    }
+  }
+
+  /// 建「闹钟级」渠道，并删掉旧的静默渠道。
+  /// 渠道的声音 / 重要性在首次创建后就锁死了，所以这里换的是新 id；
+  /// 老渠道不会被用到，删掉只是避免在系统的通知设置里留下两个入口。
+  Future<void> _setupChannel() async {
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android == null) return;
+      try {
+        await android.deleteNotificationChannel(channelId: _legacyChannelId);
+      } catch (_) {
+        // 老渠道不存在 / 平台不支持删除，无所谓
+      }
+      await android.createNotificationChannel(_channel);
+    } catch (e) {
+      _lastError = '$e';
     }
   }
 

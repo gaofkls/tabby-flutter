@@ -10,6 +10,7 @@ import '../../data/reminder.dart';
 import '../../data/reminder_providers.dart';
 import '../../data/week_helpers.dart';
 import '../../services/notification_service.dart';
+import '../../services/system_settings.dart';
 import '../../services/widget_data_service.dart';
 import '../reminder/reminder_picker.dart';
 
@@ -371,6 +372,61 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ),
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('响铃设置', style: theme.textTheme.labelLarge),
+                        const SizedBox(height: 4),
+                        Text(
+                          '通知能弹出来但不响铃，是因为系统把本应用的通知降级了。'
+                          'Android 的通知渠道声音一旦创建就锁死，必须在系统设置里放行；'
+                          '小米 / Redmi 常见于「静默通知」。'
+                          '请依次打开下面两项，把「铃声 / 悬浮通知 / 锁屏通知」都打开。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => SystemSettings
+                                  .openChannelSettings(
+                                NotificationService.channelId,
+                              ),
+                              icon: const Icon(Icons.volume_up_outlined,
+                                  size: 18),
+                              label: const Text('打开通知铃声设置'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: SystemSettings
+                                  .openNotificationSettings,
+                              icon: const Icon(Icons.settings_outlined,
+                                  size: 18),
+                              label: const Text('应用通知设置'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed:
+                                  SystemSettings.openAlarmAndRemindersSettings,
+                              icon: const Icon(Icons.alarm_outlined, size: 18),
+                              label: const Text('闹钟与提醒授权'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: SystemSettings.openAppDetails,
+                              icon: const Icon(Icons.shield_outlined,
+                                  size: 18),
+                              label: const Text('自启动 / 电池'),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
