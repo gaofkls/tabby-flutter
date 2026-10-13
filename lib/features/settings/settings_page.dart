@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:home_widget/home_widget.dart';
 
 import '../../app/router.dart';
 import '../../data/occurrence.dart';
@@ -56,6 +57,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已给 $count 条记录应用「${spec.label}」')),
     );
+  }
+
+  /// 请求把小组件钉到桌面（Android 8.0 / API 26+ 才支持）。
+  /// 不支持的机型退化为「长按桌面手动添加」的提示。
+  Future<void> _pinWidget() async {
+    final supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+    if (!mounted) return;
+    if (!supported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前系统不支持一键添加，请长按桌面空白处手动添加'),
+        ),
+      );
+      return;
+    }
+    await HomeWidget.requestPinWidget(name: 'TabbyWidget');
   }
 
   Future<void> _clearOverrides() async {
@@ -265,6 +282,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('桌面小组件', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.widgets_outlined),
+                title: const Text('把「今天 / 明天备忘」放到桌面'),
+                subtitle: const Text(
+                  '添加后显示今天和明天的备忘；备忘一改动会自动刷新',
+                ),
+                trailing: TextButton(
+                  onPressed: _pinWidget,
+                  child: const Text('添加到桌面'),
+                ),
               ),
             ),
             const SizedBox(height: 20),
