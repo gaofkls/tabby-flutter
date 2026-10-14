@@ -62,17 +62,20 @@ class TabbyAlarmService : Service() {
         }
 
         /// 立刻停止响铃，并取消还没到的后续轮次（通知上的「关闭」走这条路）。
+        ///
+        /// 注意：这里用 [Context.stopService] 而不是 startForegroundService——
+        /// 之前用 startForegroundService 下发 ACTION_STOP 时，如果服务当时没在运行，
+        /// Android 8+ 会要求新拉起的服务必须在 5 秒内调用 startForeground()，
+        /// 否则抛出 RemoteServiceException 直接杀掉整个进程。
+        /// 而我们的 STOP 分支恰恰不会调用 startForeground()，于是每次切到「系统通知」模式
+        /// （或任何会触发 cancelAll 的路径）都会崩，且因模式已持久化而每次启动都崩、进不去。
+        /// stopService 在服务没运行时只是返回 false，安全无副作用。
         fun stopAll(context: Context) {
             TabbyAlarmScheduler.cancelPendingRepeat(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(NOTIFICATION_ID)
             try {
-                val service = intent(context, 0, "提醒", "", 1, stop = true)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(service)
-                } else {
-                    context.startService(service)
-                }
+                context.stopService(intent(context, 0, "提醒", "", 1, stop = true))
             } catch (e: Exception) {
                 Log.w(TAG, "停止响铃失败", e)
             }
