@@ -10,6 +10,9 @@
     <!-- 闹钟到点时把响铃页面顶到锁屏之上 -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 响铃交给前台服务持有，App 退到后台/锁屏也不会被系统回收 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
     <application
         android:label="tabby"
@@ -53,6 +56,11 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <!-- 真正管响铃的前台服务：目标是让 App 退到后台或锁屏时也能把人叫醒 -->
+        <service
+            android:name=".TabbyAlarmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <activity
             android:name=".TabbyAlarmActivity"
             android:exported="false"

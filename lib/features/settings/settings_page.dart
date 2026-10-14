@@ -315,6 +315,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ],
                           ),
                         ),
+                        Text(
+                          '小米 / Redmi 还需要在「应用信息 → 其他权限」里打开'
+                          '「后台弹出界面」和「锁屏显示」，并在「省电策略」选「无限制」；'
+                          '否则系统只允许 App 在前台时弹出响铃页'
+                          '（但铃声仍会响，通知栏也能看到「正在响铃」）。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
