@@ -10,11 +10,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /// 一条待响的闹钟。
+///
+/// [round] 是「这是第几次响」：闹钟按「响 N 分钟 → 隔 M 分钟 → 再响」的节奏重复时，
+/// 每一轮重新排一条，靠这个计数判断有没有达到上限。
 data class AlarmSpec(
     val id: Int,
     val atMillis: Long,
     val title: String,
     val body: String,
+    val round: Int = 1,
 )
 
 /// 用系统 AlarmManager 排真正的闹钟。
@@ -45,6 +49,7 @@ object TabbyAlarmScheduler {
                         putExtra(TabbyAlarmActivity.EXTRA_ID, spec.id)
                         putExtra(TabbyAlarmActivity.EXTRA_TITLE, spec.title)
                         putExtra(TabbyAlarmActivity.EXTRA_BODY, spec.body)
+                        putExtra(TabbyAlarmActivity.EXTRA_ROUND, spec.round)
                     }
                     val showPi = PendingIntent.getActivity(
                         context,
@@ -92,6 +97,19 @@ object TabbyAlarmScheduler {
             }
         }
         save(context, emptyList())
+        cancelPendingRepeat(context)
+    }
+
+    /// 取消「还有一轮待响」的闹钟（重复响铃中途用户手动关闭时用）。
+    fun cancelPendingRepeat(context: Context) {
+        val spec = TabbyAlarmPrefs.pendingRepeat(context) ?: return
+        try {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            am.cancel(alarmPendingIntent(context, spec))
+        } catch (e: Exception) {
+            Log.w(TAG, "取消待响闹钟失败 id=${spec.id}", e)
+        }
+        TabbyAlarmPrefs.clearPendingRepeat(context)
     }
 
     /// 开机 / 升级后由 TabbyAlarmBootReceiver 调用，把上次排好的闹钟重新装上。
@@ -110,6 +128,7 @@ object TabbyAlarmScheduler {
             putExtra(TabbyAlarmActivity.EXTRA_TITLE, spec.title)
             putExtra(TabbyAlarmActivity.EXTRA_BODY, spec.body)
             putExtra(TabbyAlarmActivity.EXTRA_AT, spec.atMillis)
+            putExtra(TabbyAlarmActivity.EXTRA_ROUND, spec.round)
         }
         return PendingIntent.getBroadcast(
             context,
@@ -130,13 +149,14 @@ object TabbyAlarmScheduler {
     private fun save(context: Context, specs: List<AlarmSpec>) {
         val arr = JSONArray()
         for (s in specs) {
-            arr.put(
-                JSONObject()
-                    .put("id", s.id)
-                    .put("at", s.atMillis)
-                    .put("title", s.title)
-                    .put("body", s.body),
-            )
+                arr.put(
+                    JSONObject()
+                        .put("id", s.id)
+                        .put("at", s.atMillis)
+                        .put("title", s.title)
+                        .put("body", s.body)
+                        .put("round", s.round),
+                )
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
@@ -156,6 +176,7 @@ object TabbyAlarmScheduler {
                     atMillis = o.getLong("at"),
                     title = o.optString("title", ""),
                     body = o.optString("body", ""),
+                    round = o.optInt("round", 1),
                 )
             }
         } catch (e: Exception) {

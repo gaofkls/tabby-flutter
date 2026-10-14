@@ -15,17 +15,32 @@ import android.util.Log
 class TabbyAlarmReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_FIRE = "com.tabby.tabby.ALARM_FIRE"
+        const val ACTION_CANCEL = "com.tabby.tabby.ALARM_CANCEL"
         private const val TAG = "TabbyAlarmReceiver"
+
+        /// 「取消后续」用广播而不是 service：两轮之间服务已经停了，
+        /// 而 Android 8+ 不允许在后台直接 startService，会被拒绝。
+        fun cancelIntent(context: Context) =
+            Intent(context, TabbyAlarmReceiver::class.java).apply {
+                action = ACTION_CANCEL
+            }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_CANCEL) {
+            TabbyAlarmScheduler.cancelPendingRepeat(context)
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                .cancel(TabbyAlarmService.NOTIFICATION_ID)
+            return
+        }
         if (intent.action != ACTION_FIRE) return
         val id = intent.getIntExtra(TabbyAlarmActivity.EXTRA_ID, 0)
         val title = intent.getStringExtra(TabbyAlarmActivity.EXTRA_TITLE) ?: "提醒"
         val body = intent.getStringExtra(TabbyAlarmActivity.EXTRA_BODY) ?: ""
+        val round = intent.getIntExtra(TabbyAlarmActivity.EXTRA_ROUND, 1)
 
-        startRingingService(context, id, title, body)
-        tryLaunchUi(context, id, title, body)
+        startRingingService(context, id, title, body, round)
+        tryLaunchUi(context, id, title, body, round)
     }
 
     private fun startRingingService(
@@ -33,8 +48,9 @@ class TabbyAlarmReceiver : BroadcastReceiver() {
         id: Int,
         title: String,
         body: String,
+        round: Int,
     ) {
-        val service = TabbyAlarmService.intent(context, id, title, body)
+        val service = TabbyAlarmService.intent(context, id, title, body, round)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(service)
@@ -56,9 +72,10 @@ class TabbyAlarmReceiver : BroadcastReceiver() {
         id: Int,
         title: String,
         body: String,
+        round: Int,
     ) {
         try {
-            context.startActivity(TabbyAlarmActivity.intent(context, id, title, body))
+            context.startActivity(TabbyAlarmActivity.intent(context, id, title, body, round))
         } catch (e: Exception) {
             // 被 ROM 拦了（小米 / Redmi 常见的「后台弹出界面」未放行）。
             // 无所谓：服务已经在响，全屏意图那条通知也还在。

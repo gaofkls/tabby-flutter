@@ -90,6 +90,38 @@ class AlarmService {
     }
   }
 
+  /// 读取响铃方式：每次响多久、隔多久再响、一共响几次。
+  Future<AlarmRingProfile> loadRingProfile() async {
+    try {
+      final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'getRingProfile',
+      );
+      return AlarmRingProfile.fromMap(raw);
+    } catch (_) {
+      return const AlarmRingProfile();
+    }
+  }
+
+  Future<void> saveRingProfile(AlarmRingProfile profile) async {
+    try {
+      await _channel.invokeMethod<void>(
+        'setRingProfile',
+        profile.toMap(),
+      );
+    } catch (_) {
+      // 平台不支持就当没设置过
+    }
+  }
+
+  /// 立刻停掉正在响的铃声，并取消后续轮次。
+  Future<void> stopRinging() async {
+    try {
+      await _channel.invokeMethod<void>('stopRinging');
+    } catch (_) {
+      // 平台不支持，忽略
+    }
+  }
+
   /// 打开系统「设置闹钟」界面，让用户把这条提醒交给系统时钟。
   ///
   /// [days] 传 null 表示单次；传 1..7 表示每周哪几天重复

@@ -42,6 +42,31 @@ class MainActivity : FlutterActivity() {
                     }
                     "cancelAll" -> {
                         TabbyAlarmScheduler.cancelAll(this)
+                        // 顺手停掉可能正在响的那一轮
+                        TabbyAlarmService.stopAll(this)
+                        result.success(null)
+                    }
+                    "getRingProfile" -> result.success(
+                        mapOf(
+                            "ringMinutes" to TabbyAlarmPrefs.ringMinutes(this),
+                            "snoozeMinutes" to TabbyAlarmPrefs.snoozeMinutes(this),
+                            "repeatTimes" to TabbyAlarmPrefs.repeatTimes(this),
+                        ),
+                    )
+                    "setRingProfile" -> {
+                        TabbyAlarmPrefs.save(
+                            this,
+                            call.argument<Int>("ringMinutes")
+                                ?: TabbyAlarmPrefs.DEFAULT_RING_MINUTES,
+                            call.argument<Int>("snoozeMinutes")
+                                ?: TabbyAlarmPrefs.DEFAULT_SNOOZE_MINUTES,
+                            call.argument<Int>("repeatTimes")
+                                ?: TabbyAlarmPrefs.DEFAULT_REPEAT_TIMES,
+                        )
+                        result.success(null)
+                    }
+                    "stopRinging" -> {
+                        TabbyAlarmService.stopAll(this)
                         result.success(null)
                     }
                     "pendingCount" ->

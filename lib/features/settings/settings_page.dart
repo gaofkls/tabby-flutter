@@ -35,6 +35,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   ReminderDelivery _delivery = ReminderDelivery.notification;
   int _alarmsPending = 0;
+  AlarmRingProfile _ring = const AlarmRingProfile();
 
   /// 桌面上已经加了的本 App 小组件数量。-1 表示查不到（平台不支持等）。
   int _installedWidgets = -1;
@@ -52,6 +53,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exactAlarm = NotificationService.instance.exactAlarmGranted;
     _delivery = await AlarmService.instance.loadMode();
     _alarmsPending = await AlarmService.instance.pendingCount();
+    _ring = await AlarmService.instance.loadRingProfile();
     await _refreshWidgetDiagnostics();
     if (mounted) setState(() {});
   }
@@ -61,7 +63,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final count = await AlarmService.instance.scheduleAll([
       ReminderTask(
         title: 'Tabby 闹钟测试',
-        body: '这是 App 自带的响铃页面，会一直响到你点关闭',
+        body: _ring.summary,
         scheduledAt: DateTime.now().add(const Duration(seconds: 10)),
       ),
     ]);
@@ -70,7 +72,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(count > 0
-            ? '已排 1 条，10 秒后应该弹出响铃页面（测完记得点「立即重排」恢复）'
+            ? '已排 1 条，10 秒后按「${_ring.summary}」响（测完记得点「立即重排」恢复）'
             : '排不上：当前平台不支持原生闹钟'),
       ),
     );
@@ -91,6 +93,52 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ? '已打开系统闹钟界面，确认后由系统时钟负责响铃'
             : '打不开：这台设备没有可用的系统闹钟界面'),
       ),
+    );
+  }
+
+  Future<void> _updateRing(AlarmRingProfile next) async {
+    setState(() => _ring = next);
+    await AlarmService.instance.saveRingProfile(next);
+  }
+
+  /// 一行「标签 + 若干候选值」的选择器。
+  Widget _chipRow(
+    String label,
+    List<int> values,
+    int selected,
+    ValueChanged<int> onPick,
+    String Function(int) format,
+  ) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 84,
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final v in values)
+                ChoiceChip(
+                  label: Text(format(v)),
+                  selected: selected == v,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onSelected: (_) => onPick(v),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -315,6 +363,49 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ],
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        Text('响铃方式', style: theme.textTheme.titleSmall),
+                        const SizedBox(height: 6),
+                        _chipRow(
+                          '每次响',
+                          AlarmRingProfile.ringOptions,
+                          _ring.ringMinutes,
+                          (v) => _updateRing(_ring.copyWith(ringMinutes: v)),
+                          (v) => '$v 分钟',
+                        ),
+                        if (!_ring.onceOnly) ...[
+                          const SizedBox(height: 4),
+                          _chipRow(
+                            '隔多久再响',
+                            AlarmRingProfile.snoozeOptions,
+                            _ring.snoozeMinutes,
+                            (v) => _updateRing(_ring.copyWith(snoozeMinutes: v)),
+                            (v) => '$v 分钟',
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        _chipRow(
+                          '最多响几次',
+                          const [
+                            1,
+                            3,
+                            5,
+                            AlarmRingProfile.repeatUntilDismissed,
+                          ],
+                          _ring.repeatTimes,
+                          (v) => _updateRing(_ring.copyWith(repeatTimes: v)),
+                          (v) => v == AlarmRingProfile.repeatUntilDismissed
+                              ? '直到关闭'
+                              : '$v 次',
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _ring.summary,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         Text(
                           '小米 / Redmi 还需要在「应用信息 → 其他权限」里打开'
                           '「后台弹出界面」和「锁屏显示」，并在「省电策略」选「无限制」；'
@@ -340,6 +431,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               icon: const Icon(Icons.alarm_add_outlined,
                                   size: 18),
                               label: const Text('打开系统闹钟界面'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  AlarmService.instance.stopRinging(),
+                              icon: const Icon(Icons.alarm_off_outlined,
+                                  size: 18),
+                              label: const Text('停止响铃'),
                             ),
                           ],
                         ),
