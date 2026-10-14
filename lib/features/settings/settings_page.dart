@@ -10,6 +10,7 @@ import '../../data/occurrence.dart';
 import '../../data/reminder.dart';
 import '../../data/reminder_providers.dart';
 import '../../data/week_helpers.dart';
+import '../../data/widget_display_mode.dart';
 import '../../services/alarm_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/system_settings.dart';
@@ -36,6 +37,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   ReminderDelivery _delivery = ReminderDelivery.notification;
   int _alarmsPending = 0;
   AlarmRingProfile _ring = const AlarmRingProfile();
+  WidgetDisplayMode _widgetMode = WidgetDisplayMode.all;
 
   /// 桌面上已经加了的本 App 小组件数量。-1 表示查不到（平台不支持等）。
   int _installedWidgets = -1;
@@ -54,6 +56,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _delivery = await AlarmService.instance.loadMode();
     _alarmsPending = await AlarmService.instance.pendingCount();
     _ring = await AlarmService.instance.loadRingProfile();
+    _widgetMode = await ref.read(widgetDataServiceProvider).loadDisplayMode();
     await _refreshWidgetDiagnostics();
     if (mounted) setState(() {});
   }
@@ -99,6 +102,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _updateRing(AlarmRingProfile next) async {
     setState(() => _ring = next);
     await AlarmService.instance.saveRingProfile(next);
+  }
+
+  /// 切换桌面部件显示备忘 / 课表 / 全部。
+  Future<void> _pickWidgetMode(WidgetDisplayMode mode) async {
+    setState(() => _widgetMode = mode);
+    final service = ref.read(widgetDataServiceProvider);
+    await service.saveDisplayMode(mode);
+    // 让原生侧按新模式重画（只改偏好不会触发重绘）
+    await service.updateWidget();
   }
 
   /// 一行「标签 + 若干候选值」的选择器。
@@ -725,13 +737,50 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 children: [
                   ListTile(
                     leading: const Icon(Icons.widgets_outlined),
-                    title: const Text('把「今天 / 明天备忘」放到桌面'),
+                    title: const Text('把「今天 / 明天安排」放到桌面'),
                     subtitle: const Text(
-                      '添加后显示今天和明天的备忘；备忘一改动会自动刷新',
+                      '显示今天和明天的备忘与课程；数据一改动会自动刷新',
                     ),
                     trailing: TextButton(
                       onPressed: _pinWidget,
                       child: const Text('添加到桌面'),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('部件里显示什么',
+                            style: theme.textTheme.bodyMedium),
+                        const SizedBox(height: 2),
+                        Text(
+                          _widgetMode.description,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final mode in WidgetDisplayMode.values)
+                              ChoiceChip(
+                                label: Text(mode.label),
+                                selected: _widgetMode == mode,
+                                onSelected: (_) => _pickWidgetMode(mode),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '列表可上下滑动；组件拉得越大，一屏显示的行数越多。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const Divider(height: 1),

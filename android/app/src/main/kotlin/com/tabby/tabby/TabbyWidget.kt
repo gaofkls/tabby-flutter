@@ -3,26 +3,25 @@ package com.tabby.tabby
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.view.View
 import android.widget.RemoteViews
-import es.antonborri.home_widget.HomeWidgetPlugin
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 /**
- * 桌面小组件：显示「今天 / 明天」的备忘。
+ * 桌面小组件：按时间顺序显示「今天 / 明天」的备忘和课表。
  *
  * 数据由 Flutter 侧（WidgetDataService）序列化成 JSON 放进 SharedPreferences，
- * 这里只负责读出来、筛成今天和明天、排好序填进 RemoteViews。
+ * 列表内容由 TabbyWidgetService（RemoteViewsService）读出来、按模式筛、排好序。
  *
- * 日期判断放在原生侧、每次重绘时按当前时间做，所以即使 App 好几天没打开，
- * 小组件也不会停在过期的旧内容上。
+ * 两个关键设计：
+ * 1. 列表用集合小组件，行数不再写死 —— 组件被拉多高就显示多少行，超出的可以滑动。
+ * 2. 日期判断放在原生侧、每次重绘时按当前时间做，所以即使 App 好几天没打开，
+ *    小组件也不会停在过期的旧内容上。
  */
 class TabbyWidget : AppWidgetProvider() {
 
@@ -34,6 +33,23 @@ class TabbyWidget : AppWidgetProvider() {
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
         }
+        // 让列表重新取一次数据（数据或显示模式变了之后靠这个刷新）
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetIds, R.id.widget_list)
+    }
+
+    /// 模式切换按钮走广播：RemoteViews 上不能直接写状态，只能让这里改完偏好再重绘。
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action != ACTION_SET_MODE) return
+
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: return
+        TabbyWidgetPrefs.setMode(context, mode)
+
+        val manager = AppWidgetManager.getInstance(context)
+        val ids = manager.getAppWidgetIds(
+            ComponentName(context, TabbyWidget::class.java),
+        )
+        manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list)
     }
 
     private fun updateAppWidget(
@@ -42,129 +58,97 @@ class TabbyWidget : AppWidgetProvider() {
         appWidgetId: Int,
     ) {
         val views = RemoteViews(context.packageName, R.layout.tabby_widget)
+        val mode = TabbyWidgetPrefs.mode(context)
 
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
+        // 整块区域（含标题栏）点一下打开 App
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
-        val pendingIntent = PendingIntent.getActivity(context, 0, launchIntent, flags)
-        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-
-        // 读数据出错时宁可显示空态，也不要让 onUpdate 抛异常——
-        // 一抛系统就会把整个小组件画成「加载失败」。
-        val entries = try {
-            loadEntries(context)
-        } catch (e: Exception) {
-            emptyList()
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        val launchPending = PendingIntent.getActivity(context, 0, launchIntent, flags)
+        views.setOnClickPendingIntent(R.id.widget_root, launchPending)
 
-        val rowIds = intArrayOf(
-            R.id.row_0, R.id.row_1, R.id.row_2, R.id.row_3,
-            R.id.row_4, R.id.row_5, R.id.row_6, R.id.row_7,
-        )
-        val tagIds = intArrayOf(
-            R.id.tag_0, R.id.tag_1, R.id.tag_2, R.id.tag_3,
-            R.id.tag_4, R.id.tag_5, R.id.tag_6, R.id.tag_7,
-        )
-        val titleIds = intArrayOf(
-            R.id.title_0, R.id.title_1, R.id.title_2, R.id.title_3,
-            R.id.title_4, R.id.title_5, R.id.title_6, R.id.title_7,
-        )
-        val timeIds = intArrayOf(
-            R.id.time_0, R.id.time_1, R.id.time_2, R.id.time_3,
-            R.id.time_4, R.id.time_5, R.id.time_6, R.id.time_7,
-        )
+        views.setTextViewText(R.id.text_scope, "今天 / 明天 · ${modeLabel(mode)}")
+        bindChip(context, views, R.id.chip_memo, "备忘",
+            mode == TabbyWidgetPrefs.MODE_MEMO)
+        bindChip(context, views, R.id.chip_course, "课表",
+            mode == TabbyWidgetPrefs.MODE_COURSE)
+        bindChip(context, views, R.id.chip_all, "全部",
+            mode == TabbyWidgetPrefs.MODE_ALL)
 
-        if (entries.isEmpty()) {
-            views.setViewVisibility(R.id.text_empty, View.VISIBLE)
-            views.setViewVisibility(R.id.text_more, View.GONE)
-            for (rowId in rowIds) views.setViewVisibility(rowId, View.GONE)
-        } else {
-            views.setViewVisibility(R.id.text_empty, View.GONE)
-            for (i in rowIds.indices) {
-                val entry = entries.getOrNull(i)
-                if (entry == null) {
-                    views.setViewVisibility(rowIds[i], View.GONE)
-                    continue
-                }
-                views.setViewVisibility(rowIds[i], View.VISIBLE)
-                views.setTextViewText(tagIds[i], entry.tag)
-                views.setTextViewText(titleIds[i], entry.title)
-                views.setTextViewText(timeIds[i], entry.timeText)
-            }
-            // 放不下的用一行「还有 N 条」兜底，避免用户以为只有这些
-            val hidden = entries.size - rowIds.size
-            if (hidden > 0) {
-                views.setViewVisibility(R.id.text_more, View.VISIBLE)
-                views.setTextViewText(R.id.text_more, "还有 $hidden 条…")
-            } else {
-                views.setViewVisibility(R.id.text_more, View.GONE)
-            }
-        }
+        views.setTextViewText(R.id.text_empty, emptyTextFor(mode))
+
+        // 列表数据交给 RemoteViewsService
+        views.setRemoteAdapter(
+            R.id.widget_list,
+            Intent(context, TabbyWidgetService::class.java),
+        )
+        views.setEmptyView(R.id.widget_list, R.id.text_empty)
 
         appWidgetManager.updateAppWidget(appWidgetId, views)
     }
 
-    private data class Entry(
-        val tag: String,
-        val title: String,
-        val timeText: String,
-        val sortKey: Int,
-    )
-
-    private fun loadEntries(context: Context): List<Entry> {
-        val raw = HomeWidgetPlugin.getData(context).getString(DATA_KEY, null)
-            ?: return emptyList()
-
-        val array = JSONObject(raw).optJSONArray("items") ?: return emptyList()
-
-        val today = dayKey(Calendar.getInstance().time)
-        val tomorrow = dayKey(
-            Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }.time,
+    /// 模式按钮：选中态换底色与文字色，点击发广播切模式。
+    private fun bindChip(
+        context: Context,
+        views: RemoteViews,
+        viewId: Int,
+        label: String,
+        selected: Boolean,
+    ) {
+        views.setTextViewText(viewId, label)
+        views.setInt(
+            viewId,
+            "setBackgroundResource",
+            if (selected) R.drawable.widget_chip_bg_selected
+            else R.drawable.widget_chip_bg,
         )
+        val color = if (selected) 0xFFFFFFFF.toInt() else 0xFF5F5E5A.toInt()
+        views.setInt(viewId, "setTextColor", color)
 
-        val result = mutableListOf<Entry>()
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val title = obj.optString("title", "").trim()
-            if (title.isEmpty()) continue
-
-            // date 为 null 代表「不限时间」的备忘，归入今天
-            val date = if (!obj.isNull("date")) obj.optString("date") else null
-            val minute = if (!obj.isNull("minute")) obj.optInt("minute") else null
-
-            val dayOffset = when {
-                date == null -> 0
-                date == today -> 0
-                date == tomorrow -> 1
-                else -> continue
-            }
-
-            val tag = if (dayOffset == 0) "今天" else "明天"
-            val timeText = if (minute == null) "不限时间" else formatMinute(minute)
-            // 不限时间的排在同组最后
-            val sortKey = dayOffset * MINUTES_PER_DAY + (minute ?: MINUTES_PER_DAY)
-
-            result.add(Entry(tag, title, timeText, sortKey))
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
         }
-
-        return result.sortedBy { it.sortKey }
+        val intent = Intent(context, TabbyWidget::class.java).apply {
+            action = ACTION_SET_MODE
+            putExtra(EXTRA_MODE, modeKeyFor(viewId))
+        }
+        val pending = PendingIntent.getBroadcast(
+            context,
+            viewId, // 用 view id 当 requestCode，三个按钮互不覆盖
+            intent,
+            flags,
+        )
+        views.setOnClickPendingIntent(viewId, pending)
     }
 
-    private fun dayKey(date: Date): String =
-        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
+    private fun modeKeyFor(viewId: Int): String = when (viewId) {
+        R.id.chip_memo -> TabbyWidgetPrefs.MODE_MEMO
+        R.id.chip_course -> TabbyWidgetPrefs.MODE_COURSE
+        else -> TabbyWidgetPrefs.MODE_ALL
+    }
 
-    private fun formatMinute(minute: Int): String {
-        val m = ((minute % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
-        return String.format(Locale.getDefault(), "%02d:%02d", m / 60, m % 60)
+    private fun modeLabel(mode: String): String = when (mode) {
+        TabbyWidgetPrefs.MODE_MEMO -> "只看备忘"
+        TabbyWidgetPrefs.MODE_COURSE -> "只看课表"
+        else -> "全部（按时间）"
+    }
+
+    private fun emptyTextFor(mode: String): String = when (mode) {
+        TabbyWidgetPrefs.MODE_MEMO -> "今天和明天没有备忘"
+        TabbyWidgetPrefs.MODE_COURSE -> "今天和明天没有课"
+        else -> "今天和明天没有安排"
     }
 
     companion object {
-        private const val DATA_KEY = "widget_memos"
-        private const val MINUTES_PER_DAY = 24 * 60
+        const val ACTION_SET_MODE = "com.tabby.tabby.WIDGET_SET_MODE"
+        const val EXTRA_MODE = "widget_mode"
     }
 }

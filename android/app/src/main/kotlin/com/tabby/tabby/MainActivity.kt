@@ -12,6 +12,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "tabby/system_settings"
         private const val ALARM_CHANNEL = "tabby/alarm"
+        private const val WIDGET_CHANNEL = "tabby/widget"
         private const val PREFS_SETTINGS = "tabby_settings"
         private const val KEY_ALARM_MODE = "alarm_mode"
     }
@@ -20,6 +21,30 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         setupSettingsChannel(flutterEngine)
         setupAlarmChannel(flutterEngine)
+        setupWidgetChannel(flutterEngine)
+    }
+
+    /// 桌面小组件的显示偏好（备忘 / 课表 / 全部）。
+    private fun setupWidgetChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getMode" -> result.success(TabbyWidgetPrefs.mode(this))
+                    "setMode" -> {
+                        TabbyWidgetPrefs.setMode(
+                            this,
+                            call.argument<String>("mode") ?: TabbyWidgetPrefs.MODE_ALL,
+                        )
+                        WidgetRefresher.update(this)
+                        result.success(null)
+                    }
+                    "update" -> {
+                        WidgetRefresher.update(this)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun setupAlarmChannel(flutterEngine: FlutterEngine) {

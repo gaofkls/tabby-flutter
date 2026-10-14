@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  小组件外壳：标题 + 显示模式切换 + 可滚动列表。
+
+  列表用的是集合小组件（RemoteViewsService 供数），这样行数不再写死——
+  组件被拉多高就显示多少行，超出的可以滑动查看。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <LinearLayout
+        android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
@@ -18,331 +25,87 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Tabby · 备忘"
+            android:text="Tabby"
             android:textColor="#FF2C2C2A"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/text_scope"
+            android:id="@+id/chip_memo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="今天 / 明天"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/widget_chip_bg"
+            android:paddingStart="7dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="7dp"
+            android:paddingBottom="3dp"
+            android:text="备忘"
             android:textColor="#FF5F5E5A"
             android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/chip_course"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/widget_chip_bg"
+            android:paddingStart="7dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="7dp"
+            android:paddingBottom="3dp"
+            android:text="课表"
+            android:textColor="#FF5F5E5A"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/chip_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/widget_chip_bg"
+            android:paddingStart="7dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="7dp"
+            android:paddingBottom="3dp"
+            android:text="全部"
+            android:textColor="#FF5F5E5A"
+            android:textSize="10sp" />
+
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/text_scope"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="今天 / 明天"
+        android:textColor="#FF5F5E5A"
+        android:textSize="10sp" />
 
     <ImageView
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="2dp"
+        android:layout_marginTop="5dp"
         android:background="#40D3D1C7"
         android:contentDescription="@null" />
 
-    <LinearLayout
-        android:id="@+id/row_0"
+    <ListView
+        android:id="@+id/widget_list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_0"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_0"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_0"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_1"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_1"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_1"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_1"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_2"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_2"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_2"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_2"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_3"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_3"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_3"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_3"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_4"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_4"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_4"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_4"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_5"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_5"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_5"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_5"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_6"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_6"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_6"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_6"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_7"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp">
-
-        <TextView
-            android:id="@+id/tag_7"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:textColor="#FF185FA5"
-            android:textSize="10sp" />
-
-        <TextView
-            android:id="@+id/title_7"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FF2C2C2A"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/time_7"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textColor="#FF5F5E5A"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/text_more"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textColor="#FF5F5E5A"
-        android:textSize="10sp"
-        android:visibility="gone" />
+        android:layout_height="0dp"
+        android:layout_marginTop="3dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:listSelector="@android:color/transparent" />
 
     <TextView
         android:id="@+id/text_empty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="今天和明天没有备忘"
+        android:layout_marginTop="12dp"
+        android:gravity="center_horizontal"
+        android:text="今天和明天没有安排"
         android:textColor="#FF5F5E5A"
         android:textSize="12sp"
         android:visibility="gone" />
