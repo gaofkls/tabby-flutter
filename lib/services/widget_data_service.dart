@@ -28,7 +28,10 @@ class WidgetDataService {
 
   static const String dataKey = 'widget_memos';
   static const String androidProviderName = 'TabbyWidget';
-  static const int windowDays = 14;
+  // 窗口拉到 60 天：原生侧只在重绘时按「当前日期」筛今天 / 明天，
+  // 所以 App 哪怕两三周没打开，组件靠定时刷新仍能显示正确的当天内容，
+  // 不会因快照停留在旧窗口而变空。备忘/课程都不会被提前显示。
+  static const int windowDays = 60;
 
   static const MethodChannel _channel = MethodChannel('tabby/widget');
 

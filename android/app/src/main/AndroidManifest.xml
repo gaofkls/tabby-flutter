@@ -61,6 +61,16 @@
             android:name=".TabbyAlarmService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+        <!-- 定时让桌面小组件自动刷新（即使 App 没打开）：
+             每 30 分钟唤醒推一次，原生侧按当前日期重筛今天 / 明天。 -->
+        <receiver
+            android:name=".TabbyWidgetRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <!-- 集合小组件的供数服务。
              exported 必须显式写 true：Android 12（API 31）起没写默认为 false，
              桌面（另一个进程）bind 不上，列表就会一直是空的。

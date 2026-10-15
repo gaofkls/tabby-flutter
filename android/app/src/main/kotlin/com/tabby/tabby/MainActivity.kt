@@ -3,6 +3,7 @@ package com.tabby.tabby
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,6 +16,12 @@ class MainActivity : FlutterActivity() {
         private const val WIDGET_CHANNEL = "tabby/widget"
         private const val PREFS_SETTINGS = "tabby_settings"
         private const val KEY_ALARM_MODE = "alarm_mode"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 让桌面小组件在 App 关闭时也能定时自动刷新（每 30 分钟一次）
+        TabbyWidgetRefreshReceiver.arm(this)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
